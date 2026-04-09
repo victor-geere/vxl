@@ -1,0 +1,2 @@
+# VXL dependencies
+# No third-party packages required — stdlib only

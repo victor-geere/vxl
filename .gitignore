@@ -1,0 +1,16 @@
+kb
+.DS_Store
+.idea
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.log
+
+# Ignore virtual environment directories
+venv/
+env/
+.venv
+
+
+context.txt 

@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hilbert Maze</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --neo-bg: #e0e5ec;
+    --neo-text: #2c3e50;
+    --neo-shadow-light: #ffffff;
+    --neo-shadow-dark: #c0c5ce;
+    --neo-accent: #3498db;
+    --neo-accent-secondary: #2ecc71;
+    --muted-foreground: #6b7280;
+    --border: #b0bec5;
+    --font-text: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', sans-serif;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--neo-bg);
+    color: var(--neo-text);
+    font-family: var(--font-text);
+    font-size: 15px; font-weight: 400; line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    min-height: 100vh;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 32px 16px;
+  }
+  h1 { font-size: 1.6rem; font-weight: 700; margin-bottom: 20px; }
+  .text-gradient {
+    background: linear-gradient(135deg, var(--neo-accent) 0%, var(--neo-accent-secondary) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .neo-card {
+    background: var(--neo-bg);
+    border-radius: 20px;
+    box-shadow: 9px 9px 16px var(--neo-shadow-dark), -9px -9px 16px var(--neo-shadow-light);
+  }
+  .neo-card-inset {
+    background: var(--neo-bg);
+    border-radius: 20px;
+    box-shadow: inset 6px 6px 12px var(--neo-shadow-dark), inset -6px -6px 12px var(--neo-shadow-light);
+  }
+  .neo-button {
+    display: inline-block;
+    background: var(--neo-bg);
+    border-radius: 12px;
+    box-shadow: 6px 6px 12px var(--neo-shadow-dark), -6px -6px 12px var(--neo-shadow-light);
+    transition: all 0.3s ease;
+    border: none;
+    font-family: var(--font-text);
+    font-size: 14px; font-weight: 500;
+    padding: 10px 24px;
+    color: var(--neo-text);
+    cursor: pointer;
+    text-decoration: none;
+  }
+  .neo-button:hover {
+    box-shadow: 4px 4px 8px var(--neo-shadow-dark), -4px -4px 8px var(--neo-shadow-light);
+  }
+  .neo-button:active {
+    box-shadow: inset 4px 4px 8px var(--neo-shadow-dark), inset -4px -4px 8px var(--neo-shadow-light);
+  }
+  .app-col {
+    display: flex; flex-direction: column; align-items: stretch;
+    gap: 24px; max-width: 95vw;
+  }
+  .controls {
+    display: flex; flex-wrap: wrap; gap: 16px 24px; align-items: center;
+    justify-content: center;
+    background: var(--neo-bg); border-radius: 16px; padding: 16px 24px;
+    box-shadow: inset 4px 4px 8px var(--neo-shadow-dark), inset -4px -4px 8px var(--neo-shadow-light);
+  }
+  .ctrl { display: flex; align-items: center; gap: 8px; }
+  .ctrl label {
+    font-size: .8rem; font-weight: 500; color: var(--muted-foreground);
+    white-space: nowrap; min-width: 120px;
+  }
+  input[type="range"] {
+    width: 120px; -webkit-appearance: none; appearance: none; height: 6px;
+    border-radius: 3px; background: var(--neo-bg); outline: none;
+    box-shadow: inset 2px 2px 4px var(--neo-shadow-dark), inset -2px -2px 4px var(--neo-shadow-light);
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%;
+    background: var(--neo-accent); cursor: pointer;
+    box-shadow: 2px 2px 4px var(--neo-shadow-dark), -2px -2px 4px var(--neo-shadow-light);
+  }
+  /* canvas-wrap: overrides neo-card-inset to add flex row layout */
+  .canvas-wrap {
+    padding: 20px;
+    display: flex; flex-direction: row; gap: 20px;
+    justify-content: space-between; align-items: stretch;
+    border-radius: 16px;
+  }
+  canvas { display: block; border-radius: 0; }
+  /* path-card: overrides neo-card; width synced to maze-card in JS */
+  #path-card {
+    padding: 20px;
+    flex-shrink: 0;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  /* table-wrap: overrides neo-card-inset to add scroll constraints */
+  #table-wrap { max-height: 420px; overflow: auto; padding: 16px; }
+  #ptable { border-collapse: collapse; font-size: .72rem; white-space: nowrap; }
+  #ptable th, #ptable td { border: 1px solid var(--border); padding: 3px 6px; text-align: center; }
+  #ptable th {
+    background: var(--neo-bg); font-weight: 600; color: var(--neo-text);
+    position: sticky; left: 0; z-index: 1;
+    box-shadow: 2px 0 4px rgba(0,0,0,.06);
+  }
+  #ptable td { color: var(--muted-foreground); }
+  #ptable .sel td { background: #FFF3E6; color: var(--neo-text); }
+  #ptable .sel th { background: #FFE8CC; }
+  #ptable .sep td, #ptable .sep th { border-top: 2px solid var(--border); }
+</style>
+</head>
+<body>
+<h1><span class="text-gradient">Hilbert Maze</span></h1>
+<div class="app-col">
+<div class="controls">
+  <div class="ctrl">
+    <label id="lbl-order">Order: 3 (8×8)</label>
+    <input type="range" id="sl-order" min="1" max="6" value="3">
+  </div>
+  <div class="ctrl">
+    <label id="lbl-scale">Scale: 1.0×</label>
+    <input type="range" id="sl-scale" min="5" max="30" value="10">
+  </div>
+  <div class="ctrl">
+    <label id="lbl-paths">Paths: 5</label>
+    <input type="range" id="sl-paths" min="1" max="20" value="5">
+  </div>
+  <div class="ctrl">
+    <label id="lbl-sel">Selected: 1</label>
+    <input type="range" id="sl-sel" min="1" max="5" value="1">
+  </div>
+  <button id="reset" class="neo-button">Reset</button>
+</div>
+<div class="canvas-wrap neo-card-inset">
+    <div id="maze-card" style="background:var(--neo-bg); border:1px solid var(--neo-shadow-dark); box-shadow:inset 1px 1px 0px 0px var(--neo-shadow-light), 1px 1px 0px 0px var(--neo-shadow-light);">
+        <canvas id="maze"></canvas>
+    </div>
+    <div id="path-card" class="neo-card"></div>
+</div>
+<div id="table-wrap" class="neo-card-inset"><table id="ptable"></table></div>
+</div>
+
+<script>
+/* ── state ── */
+const S = {
+  order: 3, scale: 1.0, selPath: 1,
+  curve: [], paths: [], entries: []
+};
+const BASE = 512;
+const MAX_TABLE_COLS = 150;
+
+/* ── Hilbert d→xy ── */
+function d2xy(order, d) {
+  const n = 1 << order;
+  let x = 0, y = 0, t = d;
+  for (let s = 1; s < n; s <<= 1) {
+    const rx = (t >> 1) & 1;
+    const ry = (t & 1) ^ rx;
+    if (ry === 0) {
+      if (rx === 1) { x = s - 1 - x; y = s - 1 - y; }
+      const tmp = x; x = y; y = tmp;
+    }
+    x += s * rx;
+    y += s * ry;
+    t >>= 2;
+  }
+  return { x, y };
+}
+
+/* ── Hilbert xy→d ── */
+function xy2d(order, ix, iy) {
+  const n = 1 << order;
+  let d = 0, x = ix, y = iy;
+  for (let s = n >> 1; s > 0; s >>= 1) {
+    const rx = (x & s) > 0 ? 1 : 0;
+    const ry = (y & s) > 0 ? 1 : 0;
+    d += s * s * ((3 * rx) ^ ry);
+    if (ry === 0) {
+      if (rx === 1) { x = s - 1 - x; y = s - 1 - y; }
+      const tmp = x; x = y; y = tmp;
+    }
+  }
+  return d;
+}
+
+/* ── cell naming ── */
+function colLetter(c) {
+  let s = '', v = c;
+  do {
+    s = String.fromCharCode(65 + (v % 26)) + s;
+    v = Math.floor(v / 26) - 1;
+  } while (v >= 0);
+  return s;
+}
+function cellName(hx, hy, gs) { return colLetter(hx) + (gs - hy); }
+
+/* ── build curve ── */
+function buildCurve(order) {
+  const total = 1 << (2 * order);
+  const c = new Array(total);
+  for (let d = 0; d < total; d++) c[d] = d2xy(order, d);
+  return c;
+}
+
+/* ── edge cells + shuffle ── */
+function edgeCells(gs) {
+  const cells = [], seen = new Set();
+  const add = (x, y) => { const k = y * gs + x; if (!seen.has(k)) { seen.add(k); cells.push({ x, y }); } };
+  for (let i = 0; i < gs; i++) {
+    add(i, 0); add(i, gs - 1); add(0, i); add(gs - 1, i);
+  }
+  return cells;
+}
+function shuffle(a) {
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+function pickWall(hx, hy, gs) {
+  const w = [];
+  if (hy === gs - 1) w.push('N');
+  if (hy === 0)      w.push('S');
+  if (hx === 0)      w.push('W');
+  if (hx === gs - 1) w.push('E');
+  return w[Math.floor(Math.random() * w.length)];
+}
+
+/* ── generate paths ── */
+function makePaths(order, curve, num) {
+  const gs = 1 << order;
+  const total = curve.length;
+  const ec = shuffle(edgeCells(gs));
+  const n = Math.min(num, ec.length);
+  const paths = [], entries = [];
+  for (let i = 0; i < n; i++) {
+    const { x, y } = ec[i];
+    const wall = pickWall(x, y, gs);
+    const d = xy2d(order, x, y);
+    const dir = Math.random() < 0.5 ? -1 : 1;
+    const cells = [];
+    if (dir < 0) { for (let j = d; j >= 0; j--) cells.push(curve[j]); }
+    else         { for (let j = d; j < total; j++) cells.push(curve[j]); }
+    paths.push(cells);
+    entries.push({ x, y, wall });
+  }
+  return { paths, entries };
+}
+
+/* ── directions ── */
+function stepDir(a, b) {
+  if (b.x > a.x) return 'E';
+  if (b.x < a.x) return 'W';
+  if (b.y > a.y) return 'N';
+  if (b.y < a.y) return 'S';
+  return '?';
+}
+
+/* ── coordinate helpers (with 1-cell padding) ── */
+function pad(gs, cs) { return cs; } // 1-cell padding on each side
+function cx(hx, cs) { return pad(0, cs) + hx * cs + cs / 2; }
+function cy(hy, gs, cs) { return pad(0, cs) + (gs - 1 - hy) * cs + cs / 2; }
+/* grid origin (top-left of the grid area, inside padding) */
+function gx0(cs) { return pad(0, cs); }
+function gy0(cs) { return pad(0, cs); }
+
+/* ── canvas refs ── */
+const canvas = document.getElementById('maze');
+const ctx = canvas.getContext('2d');
+
+/* ── draw grid ── */
+function drawGrid(gs, cs, dim) {
+  const p = pad(0, cs);
+  const gw = gs * cs; // grid width/height (without padding)
+  ctx.strokeStyle = '#c0c5ce';
+  ctx.lineWidth = 1;
+  // internal lines
+  for (let r = 1; r < gs; r++) {
+    ctx.beginPath(); ctx.moveTo(p, p + r * cs); ctx.lineTo(p + gw, p + r * cs); ctx.stroke();
+  }
+  for (let c = 1; c < gs; c++) {
+    ctx.beginPath(); ctx.moveTo(p + c * cs, p); ctx.lineTo(p + c * cs, p + gw); ctx.stroke();
+  }
+  // outer boundary with gaps for entries
+  const openT = new Set(), openB = new Set(), openL = new Set(), openR = new Set();
+  for (const e of S.entries) {
+    const cr = gs - 1 - e.y;
+    if (e.wall === 'N') openT.add(e.x);
+    if (e.wall === 'S') openB.add(e.x);
+    if (e.wall === 'W') openL.add(cr);
+    if (e.wall === 'E') openR.add(cr);
+  }
+  for (let i = 0; i < gs; i++) {
+    if (!openT.has(i)) { ctx.beginPath(); ctx.moveTo(p + i * cs, p); ctx.lineTo(p + (i+1) * cs, p); ctx.stroke(); }
+    if (!openB.has(i)) { ctx.beginPath(); ctx.moveTo(p + i * cs, p + gw); ctx.lineTo(p + (i+1) * cs, p + gw); ctx.stroke(); }
+    if (!openL.has(i)) { ctx.beginPath(); ctx.moveTo(p, p + i * cs); ctx.lineTo(p, p + (i+1) * cs); ctx.stroke(); }
+    if (!openR.has(i)) { ctx.beginPath(); ctx.moveTo(p + gw, p + i * cs); ctx.lineTo(p + gw, p + (i+1) * cs); ctx.stroke(); }
+  }
+}
+
+/* ── draw cell labels (top-left of each cell) ── */
+function drawLabels(gs, cs) {
+  const fontSize = Math.min(24, Math.max(6, cs * 0.28));
+  if (fontSize < 6) return;
+  const p = pad(0, cs);
+  ctx.font = '500 ' + fontSize + "px 'Inter',-apple-system,sans-serif";
+  ctx.fillStyle = '#6b7280';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  const inset = cs * 0.08;
+  for (let hx = 0; hx < gs; hx++) {
+    for (let hy = 0; hy < gs; hy++) {
+      const name = cellName(hx, hy, gs);
+      const px = p + hx * cs + inset;
+      const py = p + (gs - 1 - hy) * cs + inset;
+      if (ctx.measureText(name).width < cs * 0.85) {
+        ctx.fillText(name, px, py);
+      }
+    }
+  }
+}
+
+/* ── draw invisible Hilbert curve, same colour as background ── */
+function drawCurve(gs, cs) {
+  const c = S.curve;
+  if (c.length < 2) return;
+  ctx.strokeStyle = '#e0e5ec';
+  ctx.lineWidth = 2;
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(cx(c[0].x, cs), cy(c[0].y, gs, cs));
+  for (let i = 1; i < c.length; i++) ctx.lineTo(cx(c[i].x, cs), cy(c[i].y, gs, cs));
+  ctx.stroke();
+  // blue dots at curve start and end
+  const dr = Math.max(4, cs * 0.13);
+  ctx.fillStyle = '#3498db';
+  for (const pt of [c[0], c[c.length - 1]]) {
+    ctx.beginPath();
+    ctx.arc(cx(pt.x, cs), cy(pt.y, gs, cs), dr, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+/* ── straight-through detection ── */
+function isStraightThrough(cells, i) {
+  if (i <= 0 || i >= cells.length - 1) return false;
+  const prev = cells[i - 1], curr = cells[i], next = cells[i + 1];
+  if (prev.y === curr.y && curr.y === next.y) return true; // E–W
+  if (prev.x === curr.x && curr.x === next.x) return true; // N–S
+  return false;
+}
+
+/* ── draw a single path line (segment-by-segment, dashed for straight-throughs) ── */
+function drawLine(cells, gs, cs, color, alpha, width) {
+  if (cells.length < 2) return;
+  ctx.strokeStyle = color;
+  ctx.globalAlpha = alpha;
+  ctx.lineWidth = width;
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  const straight = cells.map((_, i) => isStraightThrough(cells, i));
+  const dash = Math.max(3, cs * 0.15);
+  for (let i = 0; i < cells.length - 1; i++) {
+    ctx.setLineDash(straight[i] || straight[i + 1] ? [dash, dash] : []);
+    ctx.beginPath();
+    ctx.moveTo(cx(cells[i].x, cs), cy(cells[i].y, gs, cs));
+    ctx.lineTo(cx(cells[i + 1].x, cs), cy(cells[i + 1].y, gs, cs));
+    ctx.stroke();
+  }
+  ctx.setLineDash([]);
+  ctx.globalAlpha = 1.0;
+}
+
+/* ── draw all paths ── */
+function drawPaths(gs, cs) {
+  for (let i = 0; i < S.paths.length; i++) {
+    if (i === S.selPath - 1) continue;
+    drawLine(S.paths[i], gs, cs, 'rgba(52,152,219,0.6)', 0.8, 3);
+  }
+  if (S.selPath >= 1 && S.selPath <= S.paths.length) {
+    drawLine(S.paths[S.selPath - 1], gs, cs, '#FF6600', 1.0, 3.5);
+  }
+}
+
+/* ── draw entry markers + selected-path terminus dot ── */
+function drawMarkers(gs, cs) {
+  const mr = Math.max(3, cs * 0.1);
+  for (let i = 0; i < S.paths.length; i++) {
+    const path = S.paths[i], entry = S.entries[i];
+    const isSel = i === S.selPath - 1;
+    const color = isSel ? '#FF6600' : 'rgba(52,152,219,0.6)';
+    const alpha = isSel ? 1.0 : 0.7;
+    const ecx = cx(entry.x, cs), ecy = cy(entry.y, gs, cs);
+    let bx, by, ox, oy;
+    switch (entry.wall) {
+      case 'N': bx = ecx; by = ecy - cs / 2; ox = ecx; oy = by - cs * 0.6; break;
+      case 'S': bx = ecx; by = ecy + cs / 2; ox = ecx; oy = by + cs * 0.6; break;
+      case 'W': bx = ecx - cs / 2; by = ecy; ox = bx - cs * 0.6; oy = ecy; break;
+      case 'E': bx = ecx + cs / 2; by = ecy; ox = bx + cs * 0.6; oy = ecy; break;
+    }
+    // entry line (from dot to cell center)
+    ctx.strokeStyle = color;
+    ctx.globalAlpha = alpha;
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(ecx, ecy); ctx.stroke();
+    // entry dot
+    ctx.fillStyle = color;
+    ctx.beginPath(); ctx.arc(bx, by, mr, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 1.0;
+    // orange dot at terminus of selected path only
+    if (isSel) {
+      const last = path[path.length - 1];
+      const lx = cx(last.x, cs), ly = cy(last.y, gs, cs);
+      ctx.fillStyle = '#FF6600';
+      ctx.beginPath(); ctx.arc(lx, ly, mr * 1.2, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+}
+
+/* ── build path table ── */
+function buildTable(gs) {
+  const tbl = document.getElementById('ptable');
+  tbl.innerHTML = '';
+  for (let i = 0; i < S.paths.length; i++) {
+    const path = S.paths[i];
+    const isSel = i === S.selPath - 1;
+    // compute directions
+    const dirs = ['\u2014']; // em-dash for first cell
+    for (let j = 1; j < path.length; j++) dirs.push(stepDir(path[j - 1], path[j]));
+    // truncate long paths
+    let dCells, dDirs, truncated = false;
+    if (path.length > MAX_TABLE_COLS) {
+      truncated = true;
+      const half = Math.floor(MAX_TABLE_COLS / 2);
+      dCells = path.slice(0, half).concat([null], path.slice(-half));
+      dDirs  = dirs.slice(0, half).concat([null], dirs.slice(-half));
+    } else {
+      dCells = path;
+      dDirs  = dirs;
+    }
+    // direction row
+    const tr1 = document.createElement('tr');
+    if (isSel) tr1.className = 'sel';
+    if (i > 0) tr1.classList.add('sep');
+    const th = document.createElement('th');
+    th.rowSpan = 2;
+    th.textContent = 'Path ' + (i + 1) + (truncated ? ' (' + path.length + ')' : '');
+    tr1.appendChild(th);
+    for (const d of dDirs) {
+      const td = document.createElement('td');
+      td.textContent = d === null ? '\u2026' : d;
+      tr1.appendChild(td);
+    }
+    tbl.appendChild(tr1);
+    // cell name row
+    const tr2 = document.createElement('tr');
+    if (isSel) tr2.className = 'sel';
+    for (const c of dCells) {
+      const td = document.createElement('td');
+      td.textContent = c === null ? '\u2026' : cellName(c.x, c.y, gs);
+      tr2.appendChild(td);
+    }
+    tbl.appendChild(tr2);
+  }
+}
+
+/* ── path info card ── */
+function buildPathCard(gs) {
+  const card = document.getElementById('path-card');
+  if (!card) return;
+  const i = S.selPath - 1;
+  if (i < 0 || i >= S.paths.length) {
+    card.innerHTML = '<div class="pc-title">No path</div>';
+    return;
+  }
+  const path = S.paths[i];
+  const entry = S.entries[i];
+  const wallLabel = { N: 'North \u2191', S: 'South \u2193', W: 'West \u2190', E: 'East \u2192' };
+  const dirArrow  = { N: '\u2191', S: '\u2193', W: '\u2190', E: '\u2192' };
+  const entryName = cellName(entry.x, entry.y, gs);
+  const last = path[path.length - 1];
+  const terminus = cellName(last.x, last.y, gs);
+  const dirs = [];
+  for (let j = 1; j < path.length; j++) dirs.push(stepDir(path[j-1], path[j]));
+  const dirsHtml = dirs.map(d => '<span class="pc-dir">' + (dirArrow[d]||d) + '</span>').join('');
+  card.innerHTML =
+    '<div class="pc-title">Path ' + (i+1) + ' <span style="font-size:.75rem;font-weight:400;opacity:.6">of ' + S.paths.length + '</span></div>' +
+    '<div class="pc-sep"></div>' +
+    '<div class="pc-row"><span class="pc-label">Entry</span><span class="pc-value">' + entryName + '\u00a0' + (wallLabel[entry.wall]||'') + '</span></div>' +
+    '<div class="pc-row"><span class="pc-label">Steps</span><span class="pc-value">' + (path.length - 1) + '</span></div>' +
+    '<div class="pc-row"><span class="pc-label">Terminus</span><span class="pc-value">' + terminus + '</span></div>' +
+    '<div class="pc-sep"></div>' +
+    '<div class="pc-dirs">' + dirsHtml + '</div>';
+}
+
+/* ── render everything ── */
+function render() {
+  const gs = 1 << S.order;
+  const gridDim = Math.round(BASE * S.scale);
+  const cs = gridDim / gs;
+  const p = pad(0, cs);
+  const dim = gridDim + 2 * p; // grid + 1-cell padding on each side
+  canvas.width = dim;
+  canvas.height = dim;
+  // fill background to match page
+  ctx.fillStyle = '#e0e5ec';
+  ctx.fillRect(0, 0, dim, dim);
+  drawGrid(gs, cs, dim);
+  drawLabels(gs, cs);
+  drawCurve(gs, cs);
+  drawPaths(gs, cs);
+  drawMarkers(gs, cs);
+  buildTable(gs);
+  // sync path-card width to maze-card (canvas dim + 2 × 16px padding)
+  document.getElementById('path-card').style.width = (dim + 32) + 'px';
+}
+
+/* ── controls ── */
+const slOrder = document.getElementById('sl-order');
+const slScale = document.getElementById('sl-scale');
+const slPaths = document.getElementById('sl-paths');
+const slSel   = document.getElementById('sl-sel');
+
+function updateLabels() {
+  const gs = 1 << S.order;
+  document.getElementById('lbl-order').textContent = 'Order: ' + S.order + ' (' + gs + '\u00d7' + gs + ')';
+  document.getElementById('lbl-scale').textContent = 'Scale: ' + S.scale.toFixed(1) + '\u00d7';
+  document.getElementById('lbl-paths').textContent = 'Paths: ' + S.paths.length;
+  document.getElementById('lbl-sel').textContent   = 'Selected: ' + S.selPath;
+  slSel.max = S.paths.length || 1;
+}
+function clampSel() {
+  if (S.selPath > S.paths.length) S.selPath = Math.max(1, S.paths.length);
+  slSel.value = S.selPath;
+}
+function regenerateAll() {
+  S.curve = buildCurve(S.order);
+  regeneratePaths();
+}
+function regeneratePaths() {
+  const desired = parseInt(slPaths.value) || 5;
+  const r = makePaths(S.order, S.curve, desired);
+  // pair paths with entries, filter short, sort by length, cap at 8
+  let pairs = r.paths.map((p, i) => ({ path: p, entry: r.entries[i] }));
+  pairs = pairs.filter(p => p.path.length >= 3);
+  pairs.sort((a, b) => a.path.length - b.path.length);
+  if (pairs.length > 8) pairs = pairs.slice(0, 8);
+  S.paths = pairs.map(p => p.path);
+  S.entries = pairs.map(p => p.entry);
+  clampSel();
+  updateLabels();
+  render();
+}
+
+slOrder.addEventListener('input', () => { S.order = parseInt(slOrder.value); regenerateAll(); });
+slScale.addEventListener('input', () => { S.scale = parseInt(slScale.value) / 10; updateLabels(); render(); });
+slPaths.addEventListener('input', () => { regeneratePaths(); });
+slSel.addEventListener('input', () => { S.selPath = parseInt(slSel.value); updateLabels(); render(); });
+document.getElementById('reset').addEventListener('click', () => { regenerateAll(); });
+
+/* ── init ── */
+regenerateAll();
+</script>
+</body>
+</html>

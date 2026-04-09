@@ -2,7 +2,7 @@
 
 Lossless bidirectional encoder/decoder between TypeScript/TSX source files and the VXL compressed dialect.
 
-See [docs/lang.md](../docs/lang.md) for the full VXL specification.
+See [docs/lang.md](./docs/lang.md) for the full VXL specification.
 
 ## Files
 
@@ -24,13 +24,13 @@ Converts TypeScript/TSX source files into compact VXL notation.
 
 ```bash
 # Encode a single file
-python -m vxl.encoder app/strat/page.tsx --base app
+python -m vxl.encoder app/page.tsx --base app
 
 # Encode a directory (all .ts/.tsx files → multi-block VXL doc)
 python -m vxl.encoder src/app/ --base src/app
 
 # Write output to file
-python -m vxl.encoder app/strat/page.tsx --base app -o strat.vxl
+python -m vxl.encoder app/page.tsx --base app -o strat.vxl
 ```
 
 ### Python API
@@ -39,10 +39,10 @@ python -m vxl.encoder app/strat/page.tsx --base app -o strat.vxl
 from vxl.encoder import encode, encode_file, encode_directory
 
 # Encode source string
-vxl = encode(source_code, filepath="app/strat/page.tsx", base_dir="app")
+vxl = encode(source_code, filepath="app/page.tsx", base_dir="app")
 
 # Encode a file from disk
-vxl = encode_file("app/strat/page.tsx", base_dir="app")
+vxl = encode_file("app/page.tsx", base_dir="app")
 
 # Encode all .ts/.tsx in a directory tree
 vxl_doc = encode_directory("src/app/", base_dir="src/app")
@@ -52,7 +52,7 @@ vxl_doc = encode_directory("src/app/", base_dir="src/app")
 
 | Source pattern | VXL output |
 |----------------|-----------|
-| File path + name | Header line: `app/strat\|page.tsx\|PG` |
+| File path + name | Header line: `app\|page.tsx\|PG` |
 | `import { X } from "Y"` | `<<` import field with alias compression |
 | `export default function Name` | `>>Name` |
 | `export function a, b` | `>>{a,b}` |
@@ -142,7 +142,7 @@ created_files = decode_to_files(vxl_text, output_dir="out/")
 
 ```bash
 # Encode a source file
-python -m vxl.encoder app/sumtransactions/page.tsx --base app > sum.vxl
+python -m vxl.encoder app/page.tsx --base app > sum.vxl
 
 # Inspect the VXL
 cat sum.vxl
@@ -177,5 +177,4 @@ The `B:` body lines make the round-trip lossless for function logic — state ma
 | `@/components/ui/button` | `ui{btn}` |
 | `@/components/badge-led` | `cmp{badge-led}` |
 | `@/config/types` | `cfg/types` |
-| `@/lib/vortex` | `lib/vortex` |
 | `@radix-ui/react-icons` | `radix/icons` |

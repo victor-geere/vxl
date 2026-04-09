@@ -42,7 +42,7 @@ export default function PageSumTransactions() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchSumTransactions().then(res => {
+    fetchTransactions().then(res => {
       setData(res); setTotals(calcTotals(res)); setLoading(false);
     });
   }, []);
@@ -61,10 +61,10 @@ export default function PageSumTransactions() {
 **VXL equivalent (~60 tokens):**
 
 ```
-app/sumtransactions|page.tsx|PG
->>PageSumTransactions|<<react,ui{card,select,skeleton},./api,./types,./helpers
+app|page.tsx|PG
+>>Page|<<react,ui{card,select,skeleton},./api,./types,./helpers
 $data:Transaction[]=[]|$totals:Totals?=null|$sort:SortState|$loading:b=true
-~mount→fetchSumTransactions→$data,$totals(calcTotals)
+~mount→fetchTransactions→$data,$totals(calcTotals)
 <Card><DataTable rows={sorted} totals/>|tsx+hk+ftc+tbl+sort|@ENTRY
 ```
 
@@ -83,7 +83,7 @@ PATH|FILENAME|TYPE
 | Field      | Description                              | Example                    |
 |------------|------------------------------------------|----------------------------|
 | `PATH`     | Wing-relative directory                  | `app/strat`, `app/funding` |
-| `FILENAME` | Source filename                           | `page.tsx`, `route.ts`     |
+| `FILENAME` | Source filename                          | `page.tsx`, `route.ts`     |
 | `TYPE`     | File-type code (see §3.1)                | `PG`, `RT`, `CMP`         |
 
 ### 2.2 Export / Import Line
@@ -152,7 +152,7 @@ Compressed JSX tree followed by syntax codes and flags. Only key structural elem
 For non-component files (types, utils, routes), this line is the **signature line** instead:
 
 ```
-GET,POST /api/strat/parameters/[strategy]/[pair]→json|ftc+val|@API+@ASYNC
+GET,POST /api/parameters/[account]/[pair]→json|ftc+val|@API+@ASYNC
 ```
 
 ### 2.6 Wire Line
@@ -266,15 +266,15 @@ export default function PageSumTransactions() {
 
 **VXL with BODY:**
 ```
-app/sumtransactions|page.tsx|PG
->>PageSumTransactions|<<react{useState,useEffect},ui{card,skeleton,select},./api,./types,./helpers
+app/transactions|page.tsx|PG
+>>PageTransactions|<<react{useState,useEffect},ui{card,skeleton,select},./api,./types,./helpers
 $data:Transaction[]=[]|$totals:Totals?=null|$sort:SortState={ col: "pair", dir: "asc" }|$loading:b=true
 ~mount→fetchSumTransactions→$data,$totals(calcTotals),$loading(false)
 <Card><CardContent/><Skeleton/><DataTable/>|tsx+hk+ftc+tbl+sort|@ENTRY+@CSR
-B:FETCH fetchSumTransactions()→$data,$totals(calcTotals),$loading(false)
+B:FETCH fetchTransactions()→$data,$totals(calcTotals),$loading(false)
 B:LET sorted=sortData(data,sort)
 B:RET <Card><CardContent>{B:JSXCOND $loading?<Skeleton/>:<DataTable rows={sorted} totals={totals}/>}</CardContent></Card>
-W:page.tsx→api.ts|fetchSumTransactions
+W:page.tsx→api.ts|fetchTransactions
 W:page.tsx→helpers.tsx|calcTotals,sortData,buildMarkets
 ```
 
@@ -414,7 +414,6 @@ Long import paths are compressed using alias rules:
 | `@/components/asset-pair-filter` | `cmp{asset-pair-flt}`  |
 | `@/components/badge-led`         | `cmp{badge-led}`       |
 | `@/config/types`                 | `cfg/types`            |
-| `@/lib/vortex`                   | `lib/vortex`           |
 | `@/lib/common/*`                 | `lib/common/*`         |
 | `react`                          | `react`                |
 | `next/server`                    | `next/server`          |
@@ -425,125 +424,6 @@ Long import paths are compressed using alias rules:
 | `sonner`                         | `sonner`               |
 
 **Rule:** Strip `@/components/ui/` → `ui{}`. Strip `@/components/` → `cmp{}`. Strip `@/` for `lib/`, `config/`. Keep relative and bare module names as-is. Abbreviate known long names (`button` → `btn`, `filter` → `flt`).
-
----
-
-## 6. Full Examples
-
-### 6.1 Page Component (`app/sumtransactions/page.tsx`)
-
-```
-app/sumtransactions|page.tsx|PG
->>PageSumTransactions|<<react{useState,useEffect},ui{card,skeleton,select},./api,./types,./helpers
-$data:Transaction[]=[]|$totals:Totals?=null|$sort:SortState|$loading:b=true
-~mount→fetchSumTransactions→$data,$totals(calcTotals)
-<Card>{$loading?<Skeleton/>:<DataTable rows={sorted} totals/>}|tsx+hk+ftc+tbl+sort|@ENTRY+@CSR
-B:FETCH fetchSumTransactions()→$data,$totals(calcTotals),$loading(false)
-B:LET sorted=sortData(data,sort)
-B:RET <Card><CardContent>{B:JSXCOND $loading?<Skeleton/>:<DataTable rows={sorted} totals={totals}/>}</CardContent></Card>
-W:page.tsx→api.ts|fetchSumTransactions
-W:page.tsx→helpers.tsx|calcTotals,sortData,buildMarkets
-```
-
-### 6.2 API Route (`app/api/orderbook/route.ts`)
-
-```
-app/market|route.ts|RT
->>POST:handler|<<next/server{NextResponse},lib/vortex{getClient}
-POST /api/orderbook {market:str}→{name,data:{timestamp,bids[],asks[]}}|ftc+val|@API+@ASYNC+@DYN
-```
-
-### 6.3 Type Definitions (`app/sumtransactions/types.ts`)
-
-```
-app/sumtransactions|types.ts|TP
->>{Transaction,Totals,Market,ConfigResponse,SortColumn,SortState}
-Transaction{pair:str,qty:num,price:num,side:str,date:str}
-Totals{count:num,volume:num,value:num}
-SortState{col:SortColumn,dir:"asc"|"desc"}|@PURE
-```
-
-### 6.4 Utility / Helpers (`app/sumtransactions/helpers.tsx`)
-
-```
-app/sumtransactions|helpers.tsx|UT
->>{buildMarkets,calcTotals,sortData,SortIndicator,formatPairAsset}
-buildMarkets(data:Transaction[])→Market[]
-calcTotals(data:Transaction[])→Totals
-sortData(data:Transaction[],sort:SortState)→Transaction[]
-SortIndicator(props:{col,sort,onSort})→tsx|calc+sort+tsx|@PURE
-```
-
-### 6.5 Layout (`app/sumtransactions/layout.tsx`)
-
-```
-app/sumtransactions|layout.tsx|LY
->>metadata:{title:"Vortex:Sum Transactions"}|<<next|@ENTRY+@SSR
-```
-
-### 6.6 Configuration Page (`app/config/page.tsx`)
-
-```
-app/configuration|page.tsx|PG
->>PageConfig|<<react{useState,useEffect},ui{card,btn,input,label,select,skeleton,alert-dialog},cmp{asset-pair-flt,badge-led},cfg/types,radix/icons,sonner
-$config:ConfigJson?=null|$error:str?=null|$saving:b=false|$wallets:WalletOption[]=[]
-$regenerating:b=false|$loadingColours:b=false|$newExchangeKey:str=""
-~mount→fetchConfig→$config,$wallets
-<Card><form>{fields,selects,badge-leds}</form><AlertDialog confirm={save}/>|tsx+hk+ftc+frm+mut+mod|@ENTRY+@CSR
-```
-
-### 6.7 Strategy Simulator Tab (`app/strat/simulator-tab.tsx`)
-
-```
-app/strat|simulator-tab.tsx|CMP
->>SimulatorTab|<<react{useState,useEffect,useRef},./types{AnnealingResult,SimConfig}
-$result:AnnealingResult?=null|$cancelRef:ref<b>=false|$paramsLoading:b=true|$strategyParams:R<str,num>={}
-~mount→fetch(/api/strat/parameters/${selectedStrategy}/XBTZAR)→$strategyParams
-~[$selectedStrategy]→refetch→$strategyParams
-<ParamsForm params=$strategyParams/><RunButton/><ResultChart data=$result/>|tsx+hk+ftc+calc+chrt|@CSR+@HEAVY
-```
-
-### 6.8 Hook (`lib/common/use-polling.ts`)
-
-```
-lib/common|use-polling.ts|HK
->>usePolling(url:str,interval:num)→{data:T?,loading:b,error:str?}
-$data:T?=null|$loading:b=true|$error:str?=null
-~int(interval)→fetch(url)→$data|hk+ftc+eff|@SHARE
-```
-
-### 6.9 Library Module (`lib/strategies/index.ts`)
-
-```
-lib/strategies|index.ts|IDX
->>{getStrategy,getDefaultStrategy,listStrategies,getPairStrategyMap}
-getStrategy(name:str)→StratFunction|getDefaultStrategy()→StratFunction
-listStrategies()→str[]|getPairStrategyMap()→R<str,str>
-registry:R<str,StratModule>|calc|@CORE
-```
-
----
-
-## 7. Block Separator & Multi-file Documents
-
-Multiple file blocks are separated by `---`, same as AAAK:
-
-```
-app/strat|page.tsx|PG
->>PageStrat|<<react,ui{card,tabs},./run-tab,./simulator-tab,./training-tab
-<Tabs><RunTab/><SimulatorTab/><TrainingTab/>|tsx+hk+nav|@ENTRY+@CSR
----
-app/strat|run-tab.tsx|CMP
->>RunTab|<<react{useState,useEffect},./types,./api
-$mode:RunMode="simulate"|$params:StratParameters={}|$result:RunResult?=null
-~[$strategy]→fetchParams→$params
-<Select mode/><ParamsGrid/><RunButton/><ResultTable/>|tsx+hk+ftc+tbl+calc|@CSR
----
-app/strat|types.ts|TP
->>{RunMode,StratParameters,RunResult,AnnealingResult,SimConfig}
-RunMode="simulate"|"historic"
-RunResult{totalPnl:num,sharpeRatio:num,maxDrawdownPct:num,totalTrades:num,...}|@PURE
-```
 
 ---
 
