@@ -14,7 +14,7 @@ export default function PageSumTransactions() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchSumTransactions().then(res => {
+    fetchTransactions().then(res => {
       setData(res); setTotals(calcTotals(res)); setLoading(false);
     });
   }, []);

@@ -991,6 +991,131 @@ def _gen_route_handler(methods_line: str) -> List[str]:
     return lines
 
 
+# ── HTML block decoder ───────────────────────────────────────────────────────
+
+def _decode_html_block(block: str) -> Dict:
+    """Parse an HTML-type VXL block into a structured dict with verbatim sections.
+
+    Sections: HEAD, CSS, BODY, JS — each stored verbatim between BEGIN/END markers.
+    """
+    raw_lines = block.strip().split("\n")
+    if not raw_lines:
+        return {}
+
+    result = {
+        "header": _parse_header(raw_lines[0]),
+        "doctype": "<!DOCTYPE html>",
+        "html_attrs": "",
+        "body_attrs": "",
+        "head": "",
+        "css": "",
+        "body_html": "",
+        "js": "",
+    }
+
+    i = 1
+    while i < len(raw_lines):
+        line = raw_lines[i]
+        stripped = line.strip()
+
+        if stripped.startswith("DOCTYPE:"):
+            result["doctype"] = stripped[len("DOCTYPE:"):]
+            i += 1
+            continue
+
+        if stripped.startswith("ATTR:"):
+            result["html_attrs"] = stripped[len("ATTR:"):]
+            i += 1
+            continue
+
+        if stripped.startswith("BODY_ATTR:"):
+            result["body_attrs"] = stripped[len("BODY_ATTR:"):]
+            i += 1
+            continue
+
+        # Section markers: collect everything between BEGIN and END verbatim
+        if stripped == "HEAD:BEGIN":
+            section_lines = []
+            i += 1
+            while i < len(raw_lines) and raw_lines[i].strip() != "HEAD:END":
+                section_lines.append(raw_lines[i])
+                i += 1
+            result["head"] = "\n".join(section_lines)
+            i += 1  # skip END
+            continue
+
+        if stripped == "CSS:BEGIN":
+            section_lines = []
+            i += 1
+            while i < len(raw_lines) and raw_lines[i].strip() != "CSS:END":
+                section_lines.append(raw_lines[i])
+                i += 1
+            result["css"] = "\n".join(section_lines)
+            i += 1
+            continue
+
+        if stripped == "BODY:BEGIN":
+            section_lines = []
+            i += 1
+            while i < len(raw_lines) and raw_lines[i].strip() != "BODY:END":
+                section_lines.append(raw_lines[i])
+                i += 1
+            result["body_html"] = "\n".join(section_lines)
+            i += 1
+            continue
+
+        if stripped == "JS:BEGIN":
+            section_lines = []
+            i += 1
+            while i < len(raw_lines) and raw_lines[i].strip() != "JS:END":
+                section_lines.append(raw_lines[i])
+                i += 1
+            result["js"] = "\n".join(section_lines)
+            i += 1
+            continue
+
+        i += 1
+
+    return result
+
+
+def _generate_html_source(block: Dict) -> str:
+    """Reassemble an HTML file from a parsed HTML VXL block."""
+    doctype = block.get("doctype", "<!DOCTYPE html>")
+    html_attrs = block.get("html_attrs", "")
+    head = block.get("head", "")
+    css = block.get("css", "")
+    body_attrs = block.get("body_attrs", "")
+    body_html = block.get("body_html", "")
+    js = block.get("js", "")
+
+    html_open = f"<html {html_attrs}>" if html_attrs else "<html>"
+
+    parts = [doctype, html_open, "<head>"]
+
+    if head:
+        parts.append(head)
+
+    if css:
+        parts.append(f"<style>{css}</style>")
+
+    parts.append("</head>")
+
+    body_open = f"<body {body_attrs}>" if body_attrs else "<body>"
+    parts.append(body_open)
+
+    if body_html:
+        parts.append(body_html)
+
+    if js:
+        parts.append(f"\n<script>{js}</script>")
+
+    parts.append("</body>")
+    parts.append("</html>")
+
+    return "\n".join(parts)
+
+
 # ── Block decoder ────────────────────────────────────────────────────────────
 
 def decode_block(block: str) -> Dict:
@@ -1114,6 +1239,18 @@ def decode(vxl_text: str) -> str:
     outputs = []
 
     for block_text in blocks:
+        # Detect HTML block by checking the header line
+        first_line = block_text.strip().split("\n", 1)[0] if block_text.strip() else ""
+        header = _parse_header(first_line)
+        if header.get("type") == "HTML":
+            block = _decode_html_block(block_text)
+            if not block or not block.get("header"):
+                continue
+            code = _generate_html_source(block)
+            filepath = f"{block['header']['path']}/{block['header']['filename']}"
+            outputs.append((filepath, code))
+            continue
+
         block = decode_block(block_text)
         if not block or not block.get("header"):
             continue
@@ -1366,11 +1503,22 @@ def decode_to_files(vxl_text: str, output_dir: str) -> List[str]:
     created = []
 
     for block_text in blocks:
-        block = decode_block(block_text)
-        if not block or not block.get("header"):
-            continue
-        code = _generate_source(block)
-        header = block["header"]
+        # Detect HTML block
+        first_line = block_text.strip().split("\n", 1)[0] if block_text.strip() else ""
+        hdr = _parse_header(first_line)
+        if hdr.get("type") == "HTML":
+            block = _decode_html_block(block_text)
+            if not block or not block.get("header"):
+                continue
+            code = _generate_html_source(block)
+            header = block["header"]
+        else:
+            block = decode_block(block_text)
+            if not block or not block.get("header"):
+                continue
+            code = _generate_source(block)
+            header = block["header"]
+
         filepath = os.path.join(output_dir, header["path"], header["filename"])
 
         os.makedirs(os.path.dirname(filepath), exist_ok=True)

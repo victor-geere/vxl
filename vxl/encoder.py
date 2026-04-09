@@ -56,6 +56,8 @@ def _detect_file_type(filename: str, dirpath: str) -> str:
         return "CMP"
     if name.endswith(".tsx"):
         return "CMP"
+    if name.endswith(".html") or name.endswith(".htm"):
+        return "HTML"
     return "LIB"
 
 
@@ -1166,7 +1168,340 @@ def _extract_function_sigs(source: str) -> List[str]:
     return sigs
 
 
+# ── HTML AAAK helpers ────────────────────────────────────────────────────────
+
+def _html_extract_meta(head_content: str) -> str:
+    """Build << meta/link summary line from <head> content."""
+    parts: List[str] = []
+    m = re.search(r'<meta\s+charset=["\']([^"\']+)["\']', head_content, re.I)
+    if m:
+        parts.append(f"charset={m.group(1)}")
+    m = re.search(
+        r'<meta\s+name=["\']viewport["\']\s+content=["\']([^"\']+)["\']',
+        head_content, re.I,
+    )
+    if m:
+        parts.append(f"viewport={m.group(1)}")
+    m = re.search(r"<title>([^<]+)</title>", head_content, re.I)
+    if m:
+        parts.append(f"title={m.group(1)}")
+    for lm in re.finditer(r"<link\s+([^>]+)>", head_content, re.I):
+        a = lm.group(1)
+        rel = (re.search(r'rel=["\']([^"\']+)["\']', a) or type("", (), {"group": lambda s, _: ""})).group(1)
+        href = (re.search(r'href=["\']([^"\']+)["\']', a) or type("", (), {"group": lambda s, _: ""})).group(1)
+        co = "+crossorigin" if "crossorigin" in a.lower() else ""
+        domain = re.sub(r"https?://", "", href)
+        if rel == "preconnect":
+            parts.append(f"preconnect({domain}{co})")
+        elif rel == "stylesheet":
+            parts.append(f"stylesheet({domain})")
+    return "<<" + "|".join(parts) if parts else ""
+
+
+def _html_extract_css_vars(css_content: str) -> str:
+    """Build V: CSS custom property summary."""
+    root_m = re.search(r":root\s*\{([^}]+)\}", css_content, re.DOTALL)
+    if not root_m:
+        return ""
+    pairs = re.findall(r"(--[\w-]+)\s*:\s*([^;]+);", root_m.group(1))
+    if not pairs:
+        return ""
+    return "V:" + "|".join(f"{n}={v.strip()}" for n, v in pairs)
+
+
+def _html_extract_dom_tree(body_content: str) -> str:
+    """Build compact DOM element summary."""
+    els: List[str] = []
+    for m in re.finditer(r"<(\w+)([^>]*)>", body_content):
+        tag = m.group(1).lower()
+        if tag in ("br", "hr", "img", "input", "meta", "link", "span", "label"):
+            continue
+        attrs = m.group(2)
+        id_m = re.search(r'id=["\']([^"\']+)["\']', attrs)
+        cls_m = re.search(r'class=["\']([^"\']+)["\']', attrs)
+        if id_m:
+            s = f"<{tag}#{id_m.group(1)}"
+            if cls_m:
+                s += f".{cls_m.group(1).split()[0]}"
+            s += ">"
+        elif cls_m:
+            s = f"<{tag}.{cls_m.group(1).split()[0]}>"
+        else:
+            s = f"<{tag}>"
+        if s not in els:
+            els.append(s)
+    return "".join(els[:12])
+
+
+_HTML_SYNTAX_SIGNALS = {
+    "canvas": [r"<canvas", r"getContext\(", r"beginPath\(", r"\.stroke\("],
+    "dom": [r"getElementById\(", r"createElement\(", r"\.innerHTML"],
+    "evt": [r"addEventListener\("],
+    "math": [r"Math\.", r"<<\s*\d", r"\d\s*>>"],
+    "tbl": [r"<table", r"<th[\s>]", r"<td[\s>]"],
+    "grid": [r"display:\s*flex", r"display:\s*grid", r"flex-direction"],
+    "neo": [r"box-shadow.*inset", r"neo-"],
+    "var": [r"var\(--", r":root\s*\{"],
+    "rng": [r'type=["\']range["\']', r"input\[type.*range\]"],
+    "anim": [r"transition:", r"animation:", r"@keyframes"],
+    "font": [r"fonts\.googleapis", r"font-family"],
+    "scroll": [r"overflow:\s*auto", r"position:\s*sticky"],
+}
+
+
+def _html_detect_syntax_codes(source: str) -> List[str]:
+    """Detect HTML/CSS/JS syntax codes (max 6)."""
+    codes: List[str] = []
+    for code, patterns in _HTML_SYNTAX_SIGNALS.items():
+        for pat in patterns:
+            if re.search(pat, source, re.I):
+                codes.append(code)
+                break
+        if len(codes) >= 6:
+            break
+    return codes
+
+
+def _html_detect_flags(source: str) -> List[str]:
+    """Detect HTML structural flags (max 3)."""
+    flags: List[str] = []
+    if re.search(r"<script>", source) and not re.search(r"<script\s+src=", source):
+        flags.append("@STANDALONE")
+    if re.search(r"<canvas", source, re.I):
+        flags.append("@VIZ")
+    if "addEventListener" in source:
+        flags.append("@INTERACTIVE")
+    if not re.search(r"<a\s+href=", source, re.I):
+        flags.append("@SPA")
+    return flags[:3]
+
+
+def _html_extract_js_state(js_content: str) -> str:
+    """Extract top-level const/let declarations as $ state."""
+    decls: List[str] = []
+    for m in re.finditer(r"^(const|let)\s+(\w+)\s*=\s*(.+)", js_content, re.M):
+        name = m.group(2)
+        rest = m.group(3).strip()
+        if rest.startswith("document.") or rest.startswith("function"):
+            continue
+        if rest.startswith("{"):
+            depth, end = 0, 0
+            for ci, ch in enumerate(rest):
+                if ch == "{":
+                    depth += 1
+                elif ch == "}":
+                    depth -= 1
+                if depth == 0:
+                    end = ci + 1
+                    break
+            keys = re.findall(r"(\w+)\s*:", rest[:end])
+            decls.append(f"${name}={{{','.join(keys)}}}" if keys else f"${name}")
+        else:
+            rest = rest.rstrip(";").strip()
+            if len(rest) > 40:
+                rest = rest[:30] + "..."
+            decls.append(f"${name}={rest}")
+    return "|".join(decls) if decls else ""
+
+
+def _html_extract_js_functions(js_content: str) -> str:
+    """Extract >> JS function name list."""
+    fns = re.findall(r"function\s+(\w+)\s*\(", js_content)
+    return ">>" + ",".join(fns) if fns else ""
+
+
+def _html_extract_js_events(js_content: str) -> str:
+    """Extract ~ event listener summary."""
+    el_map: Dict[str, str] = {}
+    for m in re.finditer(
+        r"(?:const|let|var)\s+(\w+)\s*=\s*document\.getElementById\(['\"]([^'\"]+)['\"]\)",
+        js_content,
+    ):
+        el_map[m.group(1)] = m.group(2)
+    events: List[str] = []
+    # var.addEventListener('event', () => { ... })
+    for m in re.finditer(
+        r"(\w+)\.addEventListener\(['\"](\w+)['\"]\s*,\s*\([^)]*\)\s*=>\s*\{([^}]+)\}",
+        js_content,
+    ):
+        el_id = el_map.get(m.group(1), m.group(1))
+        calls = [c for c in re.findall(r"(\w+)\(\)", m.group(3))
+                 if c not in ("parseInt", "parseFloat")]
+        if calls:
+            events.append(f"~{el_id}.{m.group(2)}→{'+'.join(calls)}")
+    # document.getElementById('id').addEventListener(...)
+    for m in re.finditer(
+        r"document\.getElementById\(['\"]([^'\"]+)['\"]\)\.addEventListener\(['\"](\w+)['\"]\s*,\s*\([^)]*\)\s*=>\s*\{([^}]+)\}",
+        js_content,
+    ):
+        calls = [c for c in re.findall(r"(\w+)\(\)", m.group(3))
+                 if c not in ("parseInt", "parseFloat")]
+        if calls:
+            events.append(f"~{m.group(1)}.{m.group(2)}→{'+'.join(calls)}")
+    return "|".join(events) if events else ""
+
+
+def _html_extract_init(js_content: str) -> str:
+    """Extract INIT: calls from end of JS."""
+    inits: List[str] = []
+    for line in reversed(js_content.strip().splitlines()[-5:]):
+        line = line.strip()
+        m = re.match(r"^(\w+)\(\s*\)\s*;?\s*$", line)
+        if m:
+            inits.insert(0, m.group(1) + "()")
+        elif line.startswith("/*") or line.startswith("//") or not line:
+            continue
+        else:
+            break
+    return "INIT:" + ",".join(inits) if inits else ""
+
+
 # ── Main encoder ─────────────────────────────────────────────────────────────
+
+def encode_html(source: str, filepath: str, base_dir: str = "") -> str:
+    """
+    Lossless-encode an HTML file into a VXL block using AAAK-style notation.
+
+    Structural summary lines (AAAK-style, for LLM readability):
+      <<     — head metadata (charset, viewport, title, links)
+      V:     — CSS custom properties
+      <tree> — DOM structure | syntax codes | flags
+      $      — JS state declarations
+      >>     — JS function names
+      ~      — Event listener mappings
+      INIT:  — Initialization calls
+
+    Lossless content sections:
+      HEAD:BEGIN / HEAD:END, CSS:BEGIN / CSS:END,
+      BODY:BEGIN / BODY:END, JS:BEGIN / JS:END
+    """
+    p = Path(filepath)
+    filename = p.name
+    dirpath = str(p.parent)
+
+    if base_dir:
+        try:
+            rel = p.parent.relative_to(base_dir)
+            wing_path = str(rel)
+        except ValueError:
+            wing_path = dirpath
+    else:
+        wing_path = dirpath
+
+    wing_path = wing_path.replace(os.sep, "/")
+    if wing_path == ".":
+        wing_path = "html"
+
+    out: List[str] = []
+
+    # ── Header line ──
+    out.append(f"{wing_path}|{filename}|HTML")
+
+    # ── DOCTYPE ──
+    doctype_m = re.match(r"(<!DOCTYPE[^>]*>)\s*", source, re.IGNORECASE)
+    doctype = doctype_m.group(1) if doctype_m else "<!DOCTYPE html>"
+    if doctype != "<!DOCTYPE html>":
+        out.append(f"DOCTYPE:{doctype}")
+
+    # ── <html> attributes ──
+    html_m = re.search(r"<html([^>]*)>", source, re.IGNORECASE)
+    html_attrs = html_m.group(1).strip() if html_m else ""
+    if html_attrs:
+        out.append(f"ATTR:{html_attrs}")
+
+    # ── Extract sections ──
+    head_m = re.search(r"<head[^>]*>(.*?)</head>", source, re.DOTALL | re.I)
+    head_content = head_m.group(1) if head_m else ""
+
+    style_m = re.search(r"<style[^>]*>(.*?)</style>", head_content, re.DOTALL | re.I)
+    css_content = ""
+    head_rest = head_content
+    if style_m:
+        css_content = style_m.group(1)
+        style_full = re.search(r"\n?<style[^>]*>.*?</style>\n?", head_rest, re.DOTALL | re.I)
+        if style_full:
+            head_rest = head_rest[:style_full.start()] + head_rest[style_full.end():]
+
+    body_m = re.search(r"<body[^>]*>(.*?)</body>", source, re.DOTALL | re.I)
+    body_content = body_m.group(1) if body_m else ""
+
+    body_tag_m = re.search(r"<body([^>]*)>", source, re.I)
+    body_attrs = body_tag_m.group(1).strip() if body_tag_m else ""
+
+    script_m = re.search(r"<script[^>]*>(.*?)</script>", body_content, re.DOTALL | re.I)
+    js_content = ""
+    body_rest = body_content
+    if script_m:
+        js_content = script_m.group(1)
+        script_full = re.search(r"\n?<script[^>]*>.*?</script>\n?", body_rest, re.DOTALL | re.I)
+        if script_full:
+            body_rest = body_rest[:script_full.start()] + body_rest[script_full.end():]
+
+    # ── AAAK structural summary ──
+    meta_line = _html_extract_meta(head_rest)
+    if meta_line:
+        out.append(meta_line)
+
+    if css_content:
+        vars_line = _html_extract_css_vars(css_content)
+        if vars_line:
+            out.append(vars_line)
+
+    dom_tree = _html_extract_dom_tree(body_rest)
+    syntax_codes = _html_detect_syntax_codes(source)
+    flags = _html_detect_flags(source)
+    tree_parts: List[str] = []
+    if dom_tree:
+        tree_parts.append(dom_tree)
+    if syntax_codes:
+        tree_parts.append("+".join(syntax_codes))
+    if flags:
+        tree_parts.append("+".join(flags))
+    if tree_parts:
+        out.append("|".join(tree_parts))
+
+    if js_content:
+        state_line = _html_extract_js_state(js_content)
+        if state_line:
+            out.append(state_line)
+        fn_line = _html_extract_js_functions(js_content)
+        if fn_line:
+            out.append(fn_line)
+        evt_line = _html_extract_js_events(js_content)
+        if evt_line:
+            out.append(evt_line)
+        init_line = _html_extract_init(js_content)
+        if init_line:
+            out.append(init_line)
+
+    # ── Lossless content sections ──
+    head_rest_stripped = head_rest.strip()
+    if head_rest_stripped:
+        out.append("HEAD:BEGIN")
+        out.append(head_rest_stripped)
+        out.append("HEAD:END")
+
+    if css_content:
+        out.append("CSS:BEGIN")
+        out.append(css_content)
+        out.append("CSS:END")
+
+    if body_attrs:
+        out.append(f"BODY_ATTR:{body_attrs}")
+
+    body_rest_stripped = body_rest.strip()
+    if body_rest_stripped:
+        out.append("BODY:BEGIN")
+        out.append(body_rest_stripped)
+        out.append("BODY:END")
+
+    if js_content:
+        out.append("JS:BEGIN")
+        out.append(js_content)
+        out.append("JS:END")
+
+    return "\n".join(out)
+
 
 def encode(source: str, filepath: str, base_dir: str = "") -> str:
     """
@@ -1200,6 +1535,11 @@ def encode(source: str, filepath: str, base_dir: str = "") -> str:
         wing_path = "app"
 
     file_type = _detect_file_type(filename, dirpath)
+
+    # HTML files use lossless raw encoding
+    if file_type == "HTML":
+        return encode_html(source, filepath, base_dir)
+
     imports = _parse_imports(source)
 
     lines: List[str] = []
@@ -1315,7 +1655,7 @@ def encode_directory(dirpath: str, base_dir: str = "") -> str:
         base_dir = str(root)
 
     for fpath in sorted(root.rglob("*")):
-        if fpath.suffix in (".ts", ".tsx") and "node_modules" not in str(fpath):
+        if fpath.suffix in (".ts", ".tsx", ".html", ".htm") and "node_modules" not in str(fpath):
             try:
                 block = encode_file(str(fpath), base_dir)
                 blocks.append(block)
